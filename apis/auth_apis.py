@@ -1,7 +1,7 @@
 # -*- coding:utf-8 -*-
-from iot_tcp.utils.config import config
-from iot_tcp.apis.api_path import AUTH_GATEWAY
-from iot_tcp.utils.library import api
+from utils.config import config
+from apis.api_path import AUTH_GATEWAY
+from utils.library import api
 
 
 def auth_gateway(access_key):

@@ -4,8 +4,8 @@ __author__ = "tian.xin"
 import json
 
 import requests
-from ..utils.config import config
-from ..utils.logger import logger
+from utils.config import config
+from utils.logger import logger
 
 log_status = config.get_log_status()
 

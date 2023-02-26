@@ -7,12 +7,12 @@ import threading
 from concurrent.futures import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from iot_tcp.utils.config import config
-from iot_tcp.utils.logger import logger
-from iot_tcp.apis.auth_apis import auth_gateway
+from utils.config import config
+from utils.logger import logger
+from apis.auth_apis import auth_gateway
 
 # 指定环境
-os.environ['env'] = "system-dev"
+os.environ['env'] = "system-prod"
 # 定义一个后台任务非阻塞调度器
 scheduler = BackgroundScheduler()
 # 保存网关连接信息
@@ -42,7 +42,7 @@ def client_handler(client_sock, client_addr):
         if flag:
             client = threading.Thread(target=dtu_client_thread,
                                       args=(client_sock, client_addr, result_data['data']['gateway_id'],
-                                            result_data['data']['gateway_key']))
+                                            s_data[1]))
             client.start()
         else:
             client_sock.close()
