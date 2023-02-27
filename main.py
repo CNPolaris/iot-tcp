@@ -4,6 +4,9 @@ __author__ = "tian.xin"
 import os
 import socket
 import threading
+import struct
+import json
+import time
 from concurrent.futures import ThreadPoolExecutor
 from apscheduler.schedulers.background import BackgroundScheduler
 
@@ -16,9 +19,10 @@ os.environ['env'] = "system-prod"
 # 定义一个后台任务非阻塞调度器
 scheduler = BackgroundScheduler()
 # 保存网关连接信息
-dtu_connects = []
+dtu_connects = {}
 # 保存地面站连接信息
-control_connects = []
+control_connects = {}
+station_connects = {}
 
 
 def client_handler(client_sock, client_addr):
@@ -34,7 +38,7 @@ def client_handler(client_sock, client_addr):
     elif s_data[0] == "station":
         station_client = threading.Thread(target=station_client_thread, args=(client_sock, client_addr, s_data[1]))
         # 地面站数据显示模块
-        pass
+        station_client.start()
     else:
         # 网关注册包校验
         logger.info(f"[注册包内容]{recv_data}")
@@ -62,23 +66,19 @@ def dtu_client_thread(client_sock, client_addr, gateway_id, gateway_key):
       _description_
   """
     logger.info(f"[注册包核验成功]合法连接, 新增子线程跟踪=>{client_sock}")
-    dtu_connects.append({'gateway_id': gateway_id,
-                         'gateway_key': gateway_key,
-                         'gateway_sock': client_sock})
+    dtu_connects[gateway_key] = client_sock
     try:
         while True:
             recv_data = client_sock.recv(256)
             if recv_data:
-                print(recv_data)
-                # 发送给地面站数据显示模块
-                for s in control_connects:
-                    if s['gateway_key'] == gateway_key:
-                        s['station_sock'].send(recv_data)
+                if recv_data == b'yuanli':
+                    break
+                try:
+                    station_connects[gateway_key].send(recv_data)
+                except:
+                    logger.error("[地面站-数据模块]网关发送数据错误")
             else:
-                for i in dtu_connects:
-                    if i['gateway_sock'] == client_sock:
-                        dtu_connects.remove(i)
-                        break
+                
                 client_sock.close()
                 break
     except:
@@ -97,10 +97,17 @@ def station_client_thread(client_sock, client_addr, gateway_key):
     gateway_key : _type_
         _description_
     """
-    pass
+    station_connects[gateway_key] = client_sock
+    try:
+        while True:
+            recv_data = client_sock.recv(256)
+            print(recv_data)
+    except:
+        logger.error("[地面站-数据模块]通信出错")
+    
 
 def control_client_thread(client_sock, client_addr, gateway_key):
-    """  地面站控制通信线程
+    """地面站控制通信线程
 
     Parameters
     ----------
@@ -114,24 +121,26 @@ def control_client_thread(client_sock, client_addr, gateway_key):
 
     """
     logger.info(f"[地面站连接], socket: {client_addr}, gateway: {gateway_key}")
-    control_connects.append({'gateway_key': gateway_key, 'station_sock': client_sock})
+    control_connects[gateway_key] = client_sock
     try:
         while True:
-            recv_data = client_sock.recv(1024)
-            if recv_data:
-                print(recv_data)
-                recv_data = eval(str(recv_data, encoding='utf-8'))
-                send_flag = False
-                for i in dtu_connects:
-                    if i['gateway_key'] == recv_data['gateway_key']:
-                        i['gateway_sock'].send(bytes(recv_data['command'], encoding='utf-8'))
-                        send_flag = True
-                if not send_flag:
-                    logger.warning(f"[地面站控制]{recv_data['gateway_key']} 命令发送失败, 网关可能离线")
-                    client_sock.send(bytes("0", encoding='utf-8'))
-            else:
-                client_sock.close()
-                break
+            header_len = struct.unpack('i', client_sock.recv(4))[0]
+            #收报头
+            header_bytes = client_sock.recv(header_len) #收过来的也是bytes类型
+            header_json = header_bytes.decode('utf-8')   #拿到json格式的字典
+            header_dic = json.loads(header_json)  #反序列化拿到字典了
+            total_size = header_dic['total_size']  #就拿到数据的总长度了
+            recv_data = client_sock.recv(total_size)
+            if recv_data == b'-1':
+              logger.info("[地面站-控制模块]主动关闭连接")
+              del control_connects[gateway_key]
+              client_sock.close()
+              break
+            try:
+              dtu_connects[gateway_key].send(recv_data)
+              time.sleep(0.05)
+            except:
+              logger.warning('[地面站-控制模块]网关不在线')
     except:
         client_sock.close()
         pass
@@ -168,4 +177,4 @@ if __name__ == "__main__":
     finally:
         # 关闭监听socket, 不再响应其他客户端连接
         server_socket.close()
-        logger.warn("[TCP Server]关闭服务器")
+        logger.warning("[TCP Server]关闭服务器")
