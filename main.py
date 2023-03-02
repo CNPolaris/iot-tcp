@@ -100,8 +100,20 @@ def station_client_thread(client_sock, client_addr, gateway_key):
     station_connects[gateway_key] = client_sock
     try:
         while True:
-            recv_data = client_sock.recv(256)
-            print(recv_data)
+            header_len = struct.unpack('i', client_sock.recv(4))[0]
+            #收报头
+            header_bytes = client_sock.recv(header_len) #收过来的也是bytes类型
+            header_json = header_bytes.decode('utf-8')   #拿到json格式的字典
+            header_dic = json.loads(header_json)  #反序列化拿到字典了
+            total_size = header_dic['total_size']  #就拿到数据的总长度了
+            recv_data = client_sock.recv(total_size)
+            
+            if recv_data == b'-1':
+              logger.info("[地面站-数据接收模块]主动关闭连接")
+              del station_connects[gateway_key]
+              client_sock.close()
+              break
+            
     except:
         logger.error("[地面站-数据模块]通信出错")
     
